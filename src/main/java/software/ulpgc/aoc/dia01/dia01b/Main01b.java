@@ -11,7 +11,7 @@ public class Main01b {
         // Fíjate que usamos la MISMA clase CajaFuerte. Reutilización total.
         CajaFuerte safe = new CajaFuerte(ProtocolosSeguridad.PART_B);
 
-        CargadorEntrada.process("dia01input", safe);
+        CargadorEntrada.process("dia02input", safe);
 
         System.out.println("--- RESULTADO PARTE B ---");
         System.out.println("Contraseña: " + safe.getVecesCero());
