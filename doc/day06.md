@@ -1,68 +1,68 @@
-### **Día 6 \- Compactador de basura**
+### **Day 6 \- Garbage Compactor**
 
-#### **1\. Introducción y Problema**
+#### **1\. Introduction and Problem**
 
-El escenario es un compactador de basura donde unos cefalópodos necesitan ayuda con una hoja de deberes de matemáticas. La entrada es una cuadrícula de caracteres donde los problemas están dispuestos visualmente en columnas y filas, con un operador (`+` o `*`) al pie de cada bloque. El reto consiste en **interpretar la misma cuadrícula de dos formas distintas** para extraer operandos y sumar el resultado de todas las operaciones:
+The setting is a garbage compactor where some cephalopods need help with a math homework sheet. The input is a grid of characters where the problems are laid out visually in columns and rows, with an operator (`+` or `*`) at the foot of each block. The challenge is to **interpret the same grid in two different ways** to extract operands and sum the result of all operations:
 
-* **Parte A:** los números están escritos en filas alineadas por columnas. Cada problema es una lista de números y su operador asociado.
-* **Parte B:** "Matemáticas Cefalópodas". Las columnas dejan de ser números enteros y pasan a ser dígitos posicionales; los números se leen verticalmente a través de las columnas y los problemas se separan por columnas vacías.
+* **Part A:** the numbers are written in rows aligned by columns. Each problem is a list of numbers and its associated operator.
+* **Part B:** "Cephalopod Math". The columns stop being whole numbers and become positional digits; the numbers are read vertically across the columns and the problems are separated by empty columns.
 
-Como lo único que cambia es *cómo* se parsea la misma cuadrícula, esa lógica se modela como una **estrategia intercambiable** (`OperationBuilder`) con dos implementaciones: el analizador vertical (A) y el cefalópodo (B). El motor de cálculo es idéntico para ambas.
+Since the only thing that changes is *how* the same grid is parsed, that logic is modeled as an **interchangeable strategy** (`OperationBuilder`) with two implementations: the vertical analyzer (A) and the cephalopod one (B). The computation engine is identical for both.
 
-#### **2\. Arquitectura por capas**
+#### **2\. Layered architecture**
 
-He reorganizado el día en las mismas **tres capas** (más la frontera `common.io` compartida) que los días anteriores, con las dependencias apuntando siempre hacia el dominio:
+I reorganized the day into the same **three layers** (plus the shared `common.io` boundary) as the previous days, with dependencies always pointing towards the domain:
 
 ```
 software.ulpgc.aoc
-├── common.io     (entrada compartida por TODOS los días)
-│   ├── LineLoader          (puerto: List<String> loadLines())
-│   └── ResourceLineLoader  (adaptador: lee el recurso del classpath)
+├── common.io     (input shared by ALL days)
+│   ├── LineLoader          (port: List<String> loadLines())
+│   └── ResourceLineLoader  (adapter: reads the classpath resource)
 └── day06
-    ├── model         (dominio puro, no depende de nadie)
+    ├── model         (pure domain, depends on nothing)
     │   ├── Operator
     │   ├── Operation
     │   └── OperationBuilder
-    ├── control       (orquesta el caso de uso)
+    ├── control       (orchestrates the use case)
     │   ├── CompactorController
     │   ├── VerticalAnalyzer
     │   └── CephalopodAnalyzer
-    └── application   (detalles y arranque)
-        ├── InputLoader   (parsea las líneas al dominio)
+    └── application   (details and startup)
+        ├── InputLoader   (parses the lines into the domain)
         └── a/Main06A, b/Main06B
 ```
 
-**Dirección de dependencias:** `application → control → model` y `application → common.io`. El dominio (`model`) no importa ninguna otra capa; el loader compartido (`common.io`) tampoco depende de nadie.
+**Dependency direction:** `application → control → model` and `application → common.io`. The domain (`model`) imports no other layer; the shared loader (`common.io`) depends on nothing either.
 
-#### **3\. Explicación clase a clase**
+#### **3\. Class-by-class explanation**
 
-**Capa `model` (dominio puro)**
+**`model` layer (pure domain)**
 
-* **`Operator`** *(enum funcional)*: encapsula la aritmética. Al implementar `BinaryOperator<Long>`, el enum no es solo una etiqueta sino una **función ejecutable**: sabe operar (`apply`), cuál es su valor identidad (`0` para sumar, `1` para multiplicar) y parsearse desde carácter (`from`, `isOperator`). Centraliza la lógica aritmética en un único punto.
-* **`Operation`** *(record)*: un *Value Object* que agrupa los operandos y su operador. Su única responsabilidad es orquestar el cálculo final mediante una reducción (`calculate()`), delegando la matemática pura al `Operator` → **alta cohesión**.
-* **`OperationBuilder`** *(interfaz)*: la **abstracción** de la estrategia de parseo (`addLine(String)` + `Stream<Operation> build()`). Vive en el dominio porque solo habla el idioma del dominio; es la pieza que permite intercambiar cómo se interpreta la cuadrícula sin tocar el resto.
+* **`Operator`** *(functional enum)*: encapsulates the arithmetic. By implementing `BinaryOperator<Long>`, the enum is not just a label but an **executable function**: it knows how to operate (`apply`), what its identity value is (`0` for addition, `1` for multiplication) and how to parse itself from a character (`from`, `isOperator`). It centralizes the arithmetic logic in a single point.
+* **`Operation`** *(record)*: a *Value Object* that groups the operands and their operator. Its only responsibility is to orchestrate the final computation through a reduction (`calculate()`), delegating the pure math to the `Operator` → **high cohesion**.
+* **`OperationBuilder`** *(interface)*: the **abstraction** of the parsing strategy (`addLine(String)` + `Stream<Operation> build()`). It lives in the domain because it only speaks the domain's language; it is the piece that allows swapping how the grid is interpreted without touching the rest.
 
-**Frontera de entrada (compartida: `common.io`)**
+**Input boundary (shared: `common.io`)**
 
-* **`LineLoader`** *(interfaz, puerto)* y **`ResourceLineLoader`** *(adaptador)*: viven en el paquete común `software.ulpgc.aoc.common.io` y los reutilizan **todos los días**. `loadLines()` devuelve las líneas crudas del recurso (`List<String>`); el parseo al dominio ocurre después, en la capa `application` (el OperationBuilder inyectado parsea). Así se centraliza la lectura (una sola implementación, sin duplicar) y se separa de la interpretación (SRP).
+* **`LineLoader`** *(interface, port)* and **`ResourceLineLoader`** *(adapter)*: they live in the shared package `software.ulpgc.aoc.common.io` and are reused by **every day**. `loadLines()` returns the raw lines of the resource (`List<String>`); parsing into the domain happens afterwards, in the `application` layer (the injected OperationBuilder parses). This centralizes reading (a single implementation, no duplication) and separates it from interpretation (SRP).
 
-**Capa `control` (orquesta el caso de uso)**
+**`control` layer (orchestrates the use case)**
 
-* **`CompactorController`**: el caso de uso. Recibe un `Stream<Operation>` ya parseado y en `execute()` suma el resultado de cada `calculate()`. Ignora por completo de dónde salieron los datos o cómo se parsearon → bajo acoplamiento.
-* **`VerticalAnalyzer`** *(implements `OperationBuilder`)*: la estrategia de la Parte A (números por columnas alineadas).
-* **`CephalopodAnalyzer`** *(implements `OperationBuilder`)*: la estrategia de la Parte B (dígitos posicionales leídos en vertical, problemas separados por columnas vacías).
+* **`CompactorController`**: the use case. It receives an already-parsed `Stream<Operation>` and in `execute()` sums the result of each `calculate()`. It completely ignores where the data came from or how it was parsed → low coupling.
+* **`VerticalAnalyzer`** *(implements `OperationBuilder`)*: the Part A strategy (numbers by aligned columns).
+* **`CephalopodAnalyzer`** *(implements `OperationBuilder`)*: the Part B strategy (positional digits read vertically, problems separated by empty columns).
 
-**Capa `application` (detalles y arranque)**
+**`application` layer (details and startup)**
 
-* **`InputLoader`** *(fachada de ensamblaje)*: punto estático que conecta el cargador con la estrategia inyectada (`load(filename, builder)`): lee las líneas, las alimenta al `OperationBuilder` y devuelve un `CompactorController` listo. Aísla el cableado del I/O.
-* **`Main06A` / `Main06B`** *(composition root)*: el único punto donde se elige la estrategia. La Parte A inyecta `new VerticalAnalyzer()` y la Parte B `new CephalopodAnalyzer()`; el resto del flujo es idéntico.
+* **`InputLoader`** *(assembly facade)*: a static point that connects the loader with the injected strategy (`load(filename, builder)`): it reads the lines, feeds them to the `OperationBuilder` and returns a ready `CompactorController`. It isolates the wiring from I/O.
+* **`Main06A` / `Main06B`** *(composition root)*: the single point where the strategy is chosen. Part A injects `new VerticalAnalyzer()` and Part B `new CephalopodAnalyzer()`; the rest of the flow is identical.
 
-#### **4\. Principios y diseños aplicados**
+#### **4\. Principles and designs applied**
 
-* **Patrón Strategy:** `OperationBuilder` define la familia de algoritmos de parseo (`VerticalAnalyzer`, `CephalopodAnalyzer`) y los hace intercambiables sin tocar el cargador ni el controlador.
-* **Inversión de Dependencias (DIP):** `CompactorController` solo conoce un `Stream<Operation>` y el ensamblaje depende de la abstracción `OperationBuilder`, no de las clases concretas de análisis; el arranque depende de la interfaz `LineLoader`.
-* **Abierto/Cerrado (OCP):** si apareciera una "Parte C" (ej. lectura en diagonal), basta crear un nuevo `OperationBuilder` e inyectarlo; el motor de cálculo y la carga permanecen inalterados.
-* **Responsabilidad Única (SRP):** `Operator` guarda la aritmética, `Operation` orquesta su cálculo, los analizadores solo parsean, `CompactorController` solo suma, `ResourceLineLoader` solo lee I/O, `InputLoader` solo ensambla.
-* **Segregación de Interfaces (ISP):** el puerto compartido `LineLoader` expone un único método cohesivo (`loadLines`).
-* **Inyección de Dependencias (DI):** la estrategia de parseo se pasa desde fuera; el comportamiento se elige sin tocar el núcleo.
-* **Alta Cohesión y DRY:** la aritmética está centralizada en el enum funcional `Operator` (evitando bloques condicionales), y la lectura de entrada en una única implementación.
+* **Strategy pattern:** `OperationBuilder` defines the family of parsing algorithms (`VerticalAnalyzer`, `CephalopodAnalyzer`) and makes them interchangeable without touching the loader or the controller.
+* **Dependency Inversion (DIP):** `CompactorController` only knows a `Stream<Operation>` and the assembly depends on the `OperationBuilder` abstraction, not on the concrete analysis classes; startup depends on the `LineLoader` interface.
+* **Open/Closed (OCP):** if a "Part C" appeared (e.g. diagonal reading), it is enough to create a new `OperationBuilder` and inject it; the computation engine and the loading stay unchanged.
+* **Single Responsibility (SRP):** `Operator` holds the arithmetic, `Operation` orchestrates its computation, the analyzers only parse, `CompactorController` only sums, `ResourceLineLoader` only reads I/O, `InputLoader` only assembles.
+* **Interface Segregation (ISP):** the shared port `LineLoader` exposes a single cohesive method (`loadLines`).
+* **Dependency Injection (DI):** the parsing strategy is passed from outside; the behavior is chosen without touching the core.
+* **High Cohesion and DRY:** the arithmetic is centralized in the functional enum `Operator` (avoiding conditional blocks), and input reading in a single implementation.

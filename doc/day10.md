@@ -1,69 +1,69 @@
-### **Día 10 \- Fábrica**
+### **Day 10 \- Factory**
 
-#### **1\. Introducción y Problema**
+#### **1\. Introduction and Problem**
 
-El escenario nos sitúa en una fábrica donde hay que reparar máquinas. Cada máquina tiene un conjunto de botones y un panel de indicadores con luces y voltajes. Al pulsar un botón se alternan estados concretos (luces encendidas/apagadas) y se incrementan los voltajes de ciertos componentes. El reto tiene dos partes que comparten el modelo (máquinas, botones, indicadores) y se diferencian en *qué se le pide resolver* a cada máquina:
+The setting is a factory where machines must be repaired. Each machine has a set of buttons and an indicator panel with lights and voltages. Pressing a button toggles specific states (lights on/off) and increases the voltages of certain components. The challenge has two parts that share the model (machines, buttons, indicators) and differ in *what each machine is asked to solve*:
 
-* **Parte A:** encontrar la **mínima** secuencia de pulsaciones para que las luces coincidan con una configuración objetivo, ignorando los voltajes (resuelto con BFS sobre subconjuntos de botones).
-* **Parte B:** cumplir requisitos estrictos de **voltaje acumulado**. Requiere una búsqueda **recursiva** (con memoización) que resuelve primero la paridad de las luces y luego ajusta matemáticamente los voltajes restantes.
+* **Part A:** find the **minimum** sequence of presses so the lights match a target configuration, ignoring the voltages (solved with BFS over subsets of buttons).
+* **Part B:** meet strict **accumulated voltage** requirements. It requires a **recursive** search (with memoization) that first solves the parity of the lights and then mathematically adjusts the remaining voltages.
 
-Como ambas partes recorren la misma lista de máquinas y solo cambian la función que resuelve cada una, esa función se modela como una abstracción (`MachineSolver`) inyectable: una estrategia distinta para A y para B sobre el mismo controlador.
+Since both parts iterate over the same list of machines and only the function that solves each one changes, that function is modeled as an injectable abstraction (`MachineSolver`): a different strategy for A and B over the same controller.
 
-#### **2\. Arquitectura por capas**
+#### **2\. Layered architecture**
 
-He reorganizado el día en las mismas **tres capas** (más la frontera `common.io` compartida) que los días anteriores, con las dependencias apuntando siempre hacia el dominio:
+I reorganized the day into the same **three layers** (plus the shared `common.io` boundary) as the previous days, with dependencies always pointing towards the domain:
 
 ```
 software.ulpgc.aoc
-├── common.io     (entrada compartida por TODOS los días)
-│   ├── LineLoader          (puerto: List<String> loadLines())
-│   └── ResourceLineLoader  (adaptador: lee el recurso del classpath)
+├── common.io     (input shared by ALL days)
+│   ├── LineLoader          (port: List<String> loadLines())
+│   └── ResourceLineLoader  (adapter: reads the classpath resource)
 └── day10
-    ├── model         (dominio puro, no depende de nadie)
+    ├── model         (pure domain, depends on nothing)
     │   ├── State
     │   ├── Button
     │   ├── Indicator
     │   ├── Machine
     │   └── MachineSolver
-    ├── control       (orquesta el caso de uso)
+    ├── control       (orchestrates the use case)
     │   └── FactoryController
-    └── application   (detalles y arranque)
-        ├── InputLoader   (parsea las líneas al dominio)
+    └── application   (details and startup)
+        ├── InputLoader   (parses the lines into the domain)
         └── a/Main10A, b/Main10B
 ```
 
-**Dirección de dependencias:** `application → control → model` y `application → common.io`. El dominio (`model`) no importa ninguna otra capa; el loader compartido (`common.io`) tampoco depende de nadie.
+**Dependency direction:** `application → control → model` and `application → common.io`. The domain (`model`) imports no other layer; the shared loader (`common.io`) depends on nothing either.
 
-#### **3\. Explicación clase a clase**
+#### **3\. Class-by-class explanation**
 
-**Capa `model` (dominio puro)**
+**`model` layer (pure domain)**
 
-* **`State`** *(enum)*: las luces (`ON`, `OFF`). Oculta la representación de bajo nivel (`#` / `.`) tras conceptos semánticos mediante `fromChar` y `parse`. El resto del sistema habla de estados lógicos, no de caracteres.
-* **`Button`** *(record)*: un *Value Object* atómico; solo guarda el conjunto de índices que afecta y su parseo (`from`).
-* **`Indicator`** *(record)*: agrupa datos estrechamente ligados (estados de luces y voltajes) y opera sobre ellos de forma **inmutable**: `reduceVoltagesWith`, `voltageHalf`, `toggleState` y `createInitialState` devuelven **nuevas** instancias en vez de mutar → **alta cohesión**.
-* **`Machine`** *(record)*: el motor de resolución, **puro e inmutable**. Centraliza los algoritmos: BFS sobre máscaras de botones (`solveMinPresses`, Parte A) y la búsqueda recursiva con caché (`solveVoltageRequirements`, Parte B). No lee ficheros ni imprime: solo calcula costes. Vive en el dominio porque depende solo de `State`, `Button` e `Indicator`.
-* **`MachineSolver`** *(interfaz funcional)*: la **abstracción** de "cómo resolver una máquina" (`int solve(Machine machine)`). Es la pieza que permite el DIP y elegir por polimorfismo la estrategia A o B.
+* **`State`** *(enum)*: the lights (`ON`, `OFF`). It hides the low-level representation (`#` / `.`) behind semantic concepts via `fromChar` and `parse`. The rest of the system talks about logical states, not characters.
+* **`Button`** *(record)*: an atomic *Value Object*; it only holds the set of indices it affects and its parsing (`from`).
+* **`Indicator`** *(record)*: groups closely-related data (light states and voltages) and operates on them **immutably**: `reduceVoltagesWith`, `voltageHalf`, `toggleState` and `createInitialState` return **new** instances instead of mutating → **high cohesion**.
+* **`Machine`** *(record)*: the solving engine, **pure and immutable**. It centralizes the algorithms: BFS over button masks (`solveMinPresses`, Part A) and the recursive search with cache (`solveVoltageRequirements`, Part B). It does not read files or print: it only computes costs. It lives in the domain because it depends only on `State`, `Button` and `Indicator`.
+* **`MachineSolver`** *(functional interface)*: the **abstraction** of "how to solve a machine" (`int solve(Machine machine)`). It is the piece that enables DIP and choosing the A or B strategy via polymorphism.
 
-**Frontera de entrada (compartida: `common.io`)**
+**Input boundary (shared: `common.io`)**
 
-* **`LineLoader`** *(interfaz, puerto)* y **`ResourceLineLoader`** *(adaptador)*: viven en el paquete común `software.ulpgc.aoc.common.io` y los reutilizan **todos los días**. `loadLines()` devuelve las líneas crudas del recurso (`List<String>`); el parseo al dominio ocurre después, en la capa `application` (InputLoader parsea con Machine.from). Así se centraliza la lectura (una sola implementación, sin duplicar) y se separa de la interpretación (SRP).
+* **`LineLoader`** *(interface, port)* and **`ResourceLineLoader`** *(adapter)*: they live in the shared package `software.ulpgc.aoc.common.io` and are reused by **every day**. `loadLines()` returns the raw lines of the resource (`List<String>`); parsing into the domain happens afterwards, in the `application` layer (InputLoader parses with Machine.from). This centralizes reading (a single implementation, no duplication) and separates it from interpretation (SRP).
 
-**Capa `control` (orquesta el caso de uso)**
+**`control` layer (orchestrates the use case)**
 
-* **`FactoryController`**: el caso de uso. Recibe la lista de máquinas y el `MachineSolver` inyectado, y en `execute()` suma el coste que el solucionador calcula para cada máquina. Ignora si por dentro es BFS (A) o recursividad (B).
+* **`FactoryController`**: the use case. It receives the list of machines and the injected `MachineSolver`, and in `execute()` sums the cost the solver computes for each machine. It ignores whether inside it is BFS (A) or recursion (B).
 
-**Capa `application` (detalles y arranque)**
+**`application` layer (details and startup)**
 
-* **`InputLoader`** *(fachada de ensamblaje)*: lee las líneas, las parsea a máquinas (`Machine::from`) y conecta todo con el `MachineSolver` inyectado, devolviendo un `FactoryController` listo.
-* **`Main10A` / `Main10B`** *(composition root)*: el único punto donde se elige la estrategia. La Parte A inyecta `Machine::solveMinPresses` y la Parte B `machine -> machine.solveVoltageRequirements(new HashMap<>())`; el resto del flujo es idéntico.
+* **`InputLoader`** *(assembly facade)*: reads the lines, parses them into machines (`Machine::from`) and wires everything with the injected `MachineSolver`, returning a ready `FactoryController`.
+* **`Main10A` / `Main10B`** *(composition root)*: the single point where the strategy is chosen. Part A injects `Machine::solveMinPresses` and Part B `machine -> machine.solveVoltageRequirements(new HashMap<>())`; the rest of the flow is identical.
 
-#### **4\. Principios y diseños aplicados**
+#### **4\. Principles and designs applied**
 
-* **Inversión de Dependencias (DIP):** `FactoryController` depende de la abstracción `MachineSolver`, no de un algoritmo concreto; el arranque depende de la interfaz `MachineLoader`, no de cómo se leen los datos.
-* **Abierto/Cerrado (OCP):** pedir otra forma de resolver una máquina es inyectar otra estrategia; `FactoryController` queda cerrado a modificación.
-* **Responsabilidad Única (SRP):** `Button` guarda los índices, `Indicator` los datos del panel, `Machine` solo los algoritmos, `FactoryController` solo agrega, `ResourceLineLoader` (compartido) solo lee I/O, `InputLoader` solo ensambla.
-* **Inmutabilidad y robustez:** los records (`Button`, `Indicator`, `Machine`) garantizan que el estado no cambie inesperadamente; métodos como `applyButton` devuelven un nuevo `Indicator`, lo que evita efectos colaterales y hace segura la recursividad y el BFS.
-* **Segregación de Interfaces (ISP):** el puerto compartido `LineLoader` expone un único método cohesivo (`loadLines`).
-* **Patrón Factory Method:** `Machine.from`, `Button.from`, `Indicator.from` y `State.fromChar` convierten texto crudo en objetos del dominio ya válidos.
-* **Inyección de Dependencias (DI) / Strategy:** las máquinas y la estrategia de resolución se pasan desde fuera; el comportamiento se elige sin tocar el núcleo.
-* **Abstracción / Tell-Don't-Ask:** el sistema trabaja con `State.ON/OFF` y delega los cálculos en los propios objetos del dominio en vez de manipular caracteres o listas crudas.
+* **Dependency Inversion (DIP):** `FactoryController` depends on the `MachineSolver` abstraction, not on a concrete algorithm; startup depends on the `LineLoader` interface, not on how the data is read.
+* **Open/Closed (OCP):** asking for another way to solve a machine means injecting another strategy; `FactoryController` stays closed to modification.
+* **Single Responsibility (SRP):** `Button` holds the indices, `Indicator` the panel data, `Machine` only the algorithms, `FactoryController` only aggregates, `ResourceLineLoader` (shared) only reads I/O, `InputLoader` only assembles.
+* **Immutability and robustness:** the records (`Button`, `Indicator`, `Machine`) guarantee the state does not change unexpectedly; methods like `applyButton` return a new `Indicator`, which avoids side effects and makes the recursion and BFS safe.
+* **Interface Segregation (ISP):** the shared port `LineLoader` exposes a single cohesive method (`loadLines`).
+* **Factory Method pattern:** `Machine.from`, `Button.from`, `Indicator.from` and `State.fromChar` turn raw text into already-valid domain objects.
+* **Dependency Injection (DI) / Strategy:** the machines and the solving strategy are passed from outside; the behavior is chosen without touching the core.
+* **Abstraction / Tell-Don't-Ask:** the system works with `State.ON/OFF` and delegates the computations to the domain objects themselves instead of manipulating characters or raw lists.

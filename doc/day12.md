@@ -1,68 +1,68 @@
-### **Día 12 \- Granja de árboles de Navidad**
+### **Day 12 \- Christmas Tree Farm**
 
-#### **1\. Introducción y Problema**
+#### **1\. Introduction and Problem**
 
-El escenario nos sitúa en una caverna bajo el Polo Norte, una granja de árboles de Navidad donde los elfos colocan regalos bajo los árboles. Los regalos tienen formas irregulares (poliominós) y las zonas son cuadrículas de tamaños concretos (ej. 4x4, 12x5). La entrada tiene dos secciones: un **catálogo de formas** y una **lista de regiones** con la cantidad de cada regalo que debe caber. Es un problema clásico de **backtracking / empaquetado** (*tiling*):
+The setting is a cavern under the North Pole, a Christmas tree farm where the elves place gifts under the trees. The gifts have irregular shapes (polyominoes) and the areas are grids of specific sizes (e.g. 4x4, 12x5). The input has two sections: a **catalog of shapes** and a **list of regions** with the quantity of each gift that must fit. It is a classic **backtracking / packing** (*tiling*) problem:
 
-* Los regalos pueden **rotarse** (90º, 180º…) y **voltearse** (espejo), pero no pueden superponerse ni salirse de los límites.
-* El objetivo (única parte del reto) es contar **cuántas regiones son solubles**: en cuántas caben todos los regalos asignados sin colisiones.
+* The gifts can be **rotated** (90º, 180º…) and **flipped** (mirror), but cannot overlap or go outside the bounds.
+* The goal (the only part of the challenge) is to count **how many regions are solvable**: in how many all the assigned gifts fit without collisions.
 
-A diferencia de otros días, el día 12 tiene **una sola parte**. La variación interesante es interna al solucionador: elige automáticamente entre dos representaciones del tablero (máscara `long` o `BitSet`) según el tamaño de la región, una decisión de optimización encapsulada que el cliente no ve.
+Unlike other days, day 12 has **a single part**. The interesting variation is internal to the solver: it automatically chooses between two board representations (a `long` mask or a `BitSet`) depending on the region size, an encapsulated optimization decision that the client does not see.
 
-#### **2\. Arquitectura por capas**
+#### **2\. Layered architecture**
 
-He reorganizado el día en las mismas **tres capas** (más la frontera `common.io` compartida) que los días anteriores, con las dependencias apuntando siempre hacia el dominio:
+I reorganized the day into the same **three layers** (plus the shared `common.io` boundary) as the previous days, with dependencies always pointing towards the domain:
 
 ```
 software.ulpgc.aoc
-├── common.io     (entrada compartida por TODOS los días)
-│   ├── LineLoader          (puerto: List<String> loadLines())
-│   └── ResourceLineLoader  (adaptador: lee el recurso del classpath)
+├── common.io     (input shared by ALL days)
+│   ├── LineLoader          (port: List<String> loadLines())
+│   └── ResourceLineLoader  (adapter: reads the classpath resource)
 └── day12
-    ├── model         (dominio puro, no depende de nadie)
+    ├── model         (pure domain, depends on nothing)
     │   ├── Coordinate
     │   ├── Shape
     │   ├── Region
     │   └── ProblemDefinition
-    ├── control       (orquesta el caso de uso)
+    ├── control       (orchestrates the use case)
     │   ├── FarmSolver
     │   └── FarmController
-    └── application   (detalles y arranque)
-        ├── InputLoader   (parsea las líneas al dominio)
+    └── application   (details and startup)
+        ├── InputLoader   (parses the lines into the domain)
         └── a/Main12A
 ```
 
-**Dirección de dependencias:** `application → control → model` y `application → common.io`. El dominio (`model`) no importa ninguna otra capa; el loader compartido (`common.io`) tampoco depende de nadie.
+**Dependency direction:** `application → control → model` and `application → common.io`. The domain (`model`) imports no other layer; the shared loader (`common.io`) depends on nothing either.
 
-#### **3\. Explicación clase a clase**
+#### **3\. Class-by-class explanation**
 
-**Capa `model` (dominio puro)**
+**`model` layer (pure domain)**
 
-* **`Coordinate`** *(record)*: un *Value Object* inmutable (fila, columna) que encapsula sus transformaciones geométricas básicas: `rotate()` y `flip()`.
-* **`Shape`** *(record)*: un poliominó. Concentra **toda la geometría**: área, generación de las 8 isometrías (`generateVariations`), rotación, volteo y normalización. Al mantener datos y transformaciones juntos, el solucionador solo pide las variantes en vez de hacer matemática vectorial → **alta cohesión**.
-* **`Region`** *(record)*: la zona a rellenar (ancho, alto). Sabe su área y si es "pequeña" (`isSmall`, ≤ 64 celdas), criterio que guía la optimización del solucionador.
-* **`ProblemDefinition`** *(record)*: agrupa una región con la lista de piezas que deben encajar en ella. Es el caso concreto a resolver.
+* **`Coordinate`** *(record)*: an immutable *Value Object* (row, column) that encapsulates its basic geometric transformations: `rotate()` and `flip()`.
+* **`Shape`** *(record)*: a polyomino. It concentrates **all the geometry**: area, generation of the 8 isometries (`generateVariations`), rotation, flip and normalization. By keeping data and transformations together, the solver only asks for the variants instead of doing vector math → **high cohesion**.
+* **`Region`** *(record)*: the area to fill (width, height). It knows its area and whether it is "small" (`isSmall`, ≤ 64 cells), a criterion that guides the solver's optimization.
+* **`ProblemDefinition`** *(record)*: groups a region with the list of pieces that must fit in it. It is the concrete case to solve.
 
-**Frontera de entrada (compartida: `common.io`)**
+**Input boundary (shared: `common.io`)**
 
-* **`LineLoader`** *(interfaz, puerto)* y **`ResourceLineLoader`** *(adaptador)*: viven en el paquete común `software.ulpgc.aoc.common.io` y los reutilizan **todos los días**. `loadLines()` devuelve las líneas crudas del recurso (`List<String>`); el parseo al dominio ocurre después, en la capa `application` (InputLoader parsea las dos secciones (catálogo + problemas)). Así se centraliza la lectura (una sola implementación, sin duplicar) y se separa de la interpretación (SRP).
+* **`LineLoader`** *(interface, port)* and **`ResourceLineLoader`** *(adapter)*: they live in the shared package `software.ulpgc.aoc.common.io` and are reused by **every day**. `loadLines()` returns the raw lines of the resource (`List<String>`); parsing into the domain happens afterwards, in the `application` layer (InputLoader parses the two sections: catalog + problems). This centralizes reading (a single implementation, no duplication) and separates it from interpretation (SRP).
 
-**Capa `control` (orquesta el caso de uso)**
+**`control` layer (orchestrates the use case)**
 
-* **`FarmSolver`** *(motor algorítmico)*: la lógica pura de backtracking. Descarta rápido por área, ordena las piezas (mayores primero) y elige dinámicamente la representación del tablero: máscara `long` para regiones pequeñas o `BitSet` para grandes. Precalcula las colocaciones válidas de cada pieza y prueba combinaciones podando colisiones. No sabe de ficheros ni del formato global.
-* **`FarmController`** *(caso de uso)*: recorre los `ProblemDefinition` y cuenta cuántos son solubles (`countValidRegions`), delegando cada uno en un `FarmSolver`. Oculta al `Main` si por dentro se usan máscaras de bits o recursión.
+* **`FarmSolver`** *(algorithmic engine)*: the pure backtracking logic. It discards quickly by area, sorts the pieces (largest first) and dynamically chooses the board representation: a `long` mask for small regions or a `BitSet` for large ones. It precomputes the valid placements of each piece and tries combinations pruning collisions. It knows nothing about files or the overall format.
+* **`FarmController`** *(use case)*: iterates over the `ProblemDefinition`s and counts how many are solvable (`countValidRegions`), delegating each one to a `FarmSolver`. It hides from the `Main` whether bit masks or recursion are used inside.
 
-**Capa `application` (detalles y arranque)**
+**`application` layer (details and startup)**
 
-* **`InputLoader`** *(fachada de parseo y ensamblaje)*: encapsula el **complejo parseo** de la entrada de dos secciones (catálogo de formas y definición de problemas) y construye el `FarmController`. Expone `load(file)` para el arranque y `fromLines(lines)` para las pruebas.
-* **`Main12A`** *(composition root)*: el único punto donde se conecta el cargador con el controlador y se pide el resultado.
+* **`InputLoader`** *(parsing and assembly facade)*: encapsulates the **complex parsing** of the two-section input (catalog of shapes and problem definitions) and builds the `FarmController`. It exposes `load(file)` for startup and `fromLines(lines)` for the tests.
+* **`Main12A`** *(composition root)*: the single point where the loader is wired with the controller and the result is requested.
 
-#### **4\. Principios y diseños aplicados**
+#### **4\. Principles and designs applied**
 
-* **Responsabilidad Única (SRP):** `Shape` guarda la geometría, `Region` su tamaño, `FarmSolver` solo el backtracking, `FarmController` solo recorre y cuenta, `InputLoader` solo parsea y ensambla, `ResourceLineLoader` (compartido) solo lee I/O.
-* **Alta Cohesión:** `Shape` concentra todas las transformaciones (rotar, voltear, normalizar, variaciones) en un único sitio.
-* **Abstracción / encapsulación:** la elección entre máscara `long` y `BitSet` es un detalle **interno** de `FarmSolver`; el cliente solo llama a `solve(...)`. Es un ejemplo de Strategy elegida internamente por una condición (tamaño de región), no inyectada (no hace falta: solo hay un caso de uso → **YAGNI**).
-* **Inversión de Dependencias (DIP) / ISP:** el arranque depende de la interfaz `ProblemLoader`, que expone un único método cohesivo (`loadLines`).
-* **Inmutabilidad y Value Objects:** los records (`Coordinate`, `Shape`, `Region`, `ProblemDefinition`) garantizan que las miles de rotaciones y traslaciones generen **nuevas** instancias sin corromper las formas originales del catálogo.
-* **Patrón Factory Method:** la creación de formas y problemas se centraliza en `InputLoader`, encapsulando el formato de dos secciones.
-* **Rendimiento:** representar el tablero como bits permite comprobar colisiones con operaciones `AND`/`OR` en O(1), y la poda del backtracking evita explorar ramas inválidas.
+* **Single Responsibility (SRP):** `Shape` holds the geometry, `Region` its size, `FarmSolver` only the backtracking, `FarmController` only iterates and counts, `InputLoader` only parses and assembles, `ResourceLineLoader` (shared) only reads I/O.
+* **High Cohesion:** `Shape` concentrates all the transformations (rotate, flip, normalize, variations) in a single place.
+* **Abstraction / encapsulation:** the choice between a `long` mask and a `BitSet` is an **internal** detail of `FarmSolver`; the client only calls `solve(...)`. It is an example of a Strategy chosen internally by a condition (region size), not injected (not needed: there is only one use case → **YAGNI**).
+* **Dependency Inversion (DIP) / ISP:** startup depends on the `LineLoader` interface, which exposes a single cohesive method (`loadLines`).
+* **Immutability and Value Objects:** the records (`Coordinate`, `Shape`, `Region`, `ProblemDefinition`) guarantee that the thousands of rotations and translations generate **new** instances without corrupting the original shapes in the catalog.
+* **Factory Method pattern:** the creation of shapes and problems is centralized in `InputLoader`, encapsulating the two-section format.
+* **Performance:** representing the board as bits allows checking collisions with `AND`/`OR` operations in O(1), and the backtracking pruning avoids exploring invalid branches.

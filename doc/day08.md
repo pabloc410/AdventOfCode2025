@@ -1,73 +1,73 @@
-### **Día 8 \- Patio de juegos**
+### **Day 8 \- Playground**
 
-#### **1\. Introducción y Problema**
+#### **1\. Introduction and Problem**
 
-El escenario es un patio de juegos subterráneo donde los elfos instalan luces navideñas. La entrada es una lista de coordenadas 3D (X, Y, Z) que representan cajas de conexiones; cada caja empieza siendo su propio circuito independiente. Las cajas se conectan mediante cables, priorizando siempre las que estén más cerca (menor distancia euclidiana). El reto tiene dos partes que comparten la carga y el cálculo de distancias, y se diferencian en *qué algoritmo de conectividad* se aplica:
+The setting is an underground playground where the elves install Christmas lights. The input is a list of 3D coordinates (X, Y, Z) representing junction boxes; each box starts as its own independent circuit. The boxes are connected by cables, always prioritizing the closest ones (smallest Euclidean distance). The challenge has two parts that share the loading and the distance computation, and differ in *which connectivity algorithm* is applied:
 
-* **Parte A:** realizar exactamente las **1000 conexiones más cortas** y, al final, multiplicar el tamaño de los **tres circuitos más grandes** (factor de seguridad).
-* **Parte B:** ignorar el límite y seguir uniendo cables hasta que todas las cajas formen **un único circuito**; el resultado es `X1 * X2` del último par que provoca la unificación total.
+* **Part A:** make exactly the **1000 shortest connections** and, at the end, multiply the sizes of the **three largest circuits** (safety factor).
+* **Part B:** ignore the limit and keep joining cables until all boxes form **a single circuit**; the result is `X1 * X2` of the last pair that causes the total unification.
 
-Como ambas partes son algoritmos distintos sobre el mismo conjunto de cajas, se modelan como una abstracción (`CircuitSolver`) con dos implementaciones intercambiables, seleccionadas por una fábrica.
+Since both parts are different algorithms over the same set of boxes, they are modeled as an abstraction (`CircuitSolver`) with two interchangeable implementations, selected by a factory.
 
-#### **2\. Arquitectura por capas**
+#### **2\. Layered architecture**
 
-He reorganizado el día en las mismas **tres capas** (más la frontera `common.io` compartida) que los días anteriores, con las dependencias apuntando siempre hacia el dominio:
+I reorganized the day into the same **three layers** (plus the shared `common.io` boundary) as the previous days, with dependencies always pointing towards the domain:
 
 ```
 software.ulpgc.aoc
-├── common.io     (entrada compartida por TODOS los días)
-│   ├── LineLoader          (puerto: List<String> loadLines())
-│   └── ResourceLineLoader  (adaptador: lee el recurso del classpath)
+├── common.io     (input shared by ALL days)
+│   ├── LineLoader          (port: List<String> loadLines())
+│   └── ResourceLineLoader  (adapter: reads the classpath resource)
 └── day08
-    ├── model         (dominio puro, no depende de nadie)
+    ├── model         (pure domain, depends on nothing)
     │   ├── Box
     │   ├── BoxPair
     │   ├── Circuit
     │   └── CircuitSolver
-    ├── control       (orquesta el caso de uso)
+    ├── control       (orchestrates the use case)
     │   ├── CircuitConnector
     │   ├── SafetyFactorSolver
     │   ├── MergeCostSolver
     │   └── SolverFactory
-    └── application   (detalles y arranque)
-        ├── InputLoader   (parsea las líneas al dominio)
+    └── application   (details and startup)
+        ├── InputLoader   (parses the lines into the domain)
         └── a/Main08A, b/Main08B
 ```
 
-**Dirección de dependencias:** `application → control → model` y `application → common.io`. El dominio (`model`) no importa ninguna otra capa; el loader compartido (`common.io`) tampoco depende de nadie.
+**Dependency direction:** `application → control → model` and `application → common.io`. The domain (`model`) imports no other layer; the shared loader (`common.io`) depends on nothing either.
 
-#### **3\. Explicación clase a clase**
+#### **3\. Class-by-class explanation**
 
-**Capa `model` (dominio puro)**
+**`model` layer (pure domain)**
 
-* **`Box`** *(record)*: un *Value Object* inmutable con las coordenadas 3D. Encapsula la geometría: sabe calcular la distancia euclidiana a otra caja (`distanceTo`), manteniendo datos y lógica juntos → **alta cohesión**.
-* **`BoxPair`** *(record)*: un objeto de transferencia que asocia dos cajas con la distancia **pre-calculada** entre ellas, lo que permite ordenar por distancia sin recalcular la fórmula.
-* **`Circuit`** *(record)*: una agrupación lógica de cajas conectadas (un `Set<Box>`). Encapsula además su propio parseo (`fromText`), convirtiendo una línea `"x,y,z"` en un circuito de una sola caja.
-* **`CircuitSolver`** *(interfaz funcional)*: la **abstracción** del caso de uso (`long solve()`). Vive en el dominio porque no depende de ninguna otra capa; es la pieza que permite el DIP y el polimorfismo entre la Parte A y la B.
+* **`Box`** *(record)*: an immutable *Value Object* with the 3D coordinates. It encapsulates the geometry: it knows how to compute the Euclidean distance to another box (`distanceTo`), keeping data and logic together → **high cohesion**.
+* **`BoxPair`** *(record)*: a transfer object that associates two boxes with the **pre-computed** distance between them, which allows sorting by distance without recomputing the formula.
+* **`Circuit`** *(record)*: a logical grouping of connected boxes (a `Set<Box>`). It also encapsulates its own parsing (`fromText`), turning a line `"x,y,z"` into a single-box circuit.
+* **`CircuitSolver`** *(functional interface)*: the **abstraction** of the use case (`long solve()`). It lives in the domain because it depends on no other layer; it is the piece that enables DIP and polymorphism between Part A and B.
 
-**Frontera de entrada (compartida: `common.io`)**
+**Input boundary (shared: `common.io`)**
 
-* **`LineLoader`** *(interfaz, puerto)* y **`ResourceLineLoader`** *(adaptador)*: viven en el paquete común `software.ulpgc.aoc.common.io` y los reutilizan **todos los días**. `loadLines()` devuelve las líneas crudas del recurso (`List<String>`); el parseo al dominio ocurre después, en la capa `application` (InputLoader parsea con Circuit.fromText). Así se centraliza la lectura (una sola implementación, sin duplicar) y se separa de la interpretación (SRP).
+* **`LineLoader`** *(interface, port)* and **`ResourceLineLoader`** *(adapter)*: they live in the shared package `software.ulpgc.aoc.common.io` and are reused by **every day**. `loadLines()` returns the raw lines of the resource (`List<String>`); parsing into the domain happens afterwards, in the `application` layer (InputLoader parses with Circuit.fromText). This centralizes reading (a single implementation, no duplication) and separates it from interpretation (SRP).
 
-**Capa `control` (orquesta el caso de uso)**
+**`control` layer (orchestrates the use case)**
 
-* **`CircuitConnector`** *(motor algorítmico)*: contiene exclusivamente la lógica combinatoria: generar pares, ordenarlos por distancia (en paralelo), fusionar circuitos y calcular tanto el factor de seguridad (`calculateSafetyFactor`) como el coste de unificación (`calculateMergeCost`). Es el "cómo" del algoritmo, separado del "qué" del caso de uso.
-* **`SafetyFactorSolver`** *(implements `CircuitSolver`)*: la estrategia de la Parte A; recibe los circuitos y el número de conexiones y delega en el conector.
-* **`MergeCostSolver`** *(implements `CircuitSolver`)*: la estrategia de la Parte B; recibe los circuitos y delega el cálculo del coste de unificación.
-* **`SolverFactory`** *(Builder + Factory)*: híbrido que configura paso a paso (`from(circuits).type(A|B).connections(n).build()`) y crea la implementación concreta correcta de forma transparente para el cliente, validando que no falte nada antes de construir.
+* **`CircuitConnector`** *(algorithmic engine)*: contains exclusively the combinatorial logic: generating pairs, sorting them by distance (in parallel), merging circuits and computing both the safety factor (`calculateSafetyFactor`) and the unification cost (`calculateMergeCost`). It is the "how" of the algorithm, separated from the "what" of the use case.
+* **`SafetyFactorSolver`** *(implements `CircuitSolver`)*: the Part A strategy; receives the circuits and the number of connections and delegates to the connector.
+* **`MergeCostSolver`** *(implements `CircuitSolver`)*: the Part B strategy; receives the circuits and delegates the computation of the unification cost.
+* **`SolverFactory`** *(Builder + Factory)*: a hybrid that configures step by step (`from(circuits).type(A|B).connections(n).build()`) and creates the correct concrete implementation transparently for the client, validating that nothing is missing before building.
 
-**Capa `application` (detalles y arranque)**
+**`application` layer (details and startup)**
 
-* **`InputLoader`** *(fachada de ensamblaje)*: punto estático que lee las líneas, las parsea a circuitos (`Circuit::fromText`) y configura el `CircuitSolver` correcto vía la fábrica (`loadSafetyFactor`, `loadMergeCost`).
-* **`Main08A` / `Main08B`** *(composition root)*: el único punto donde se elige la estrategia. La Parte A pide el solucionador del factor de seguridad con 1000 conexiones; la Parte B el de unificación. El resto del flujo es idéntico: `solver.solve()`.
+* **`InputLoader`** *(assembly facade)*: a static point that reads the lines, parses them into circuits (`Circuit::fromText`) and configures the correct `CircuitSolver` via the factory (`loadSafetyFactor`, `loadMergeCost`).
+* **`Main08A` / `Main08B`** *(composition root)*: the single point where the strategy is chosen. Part A requests the safety-factor solver with 1000 connections; Part B the unification one. The rest of the flow is identical: `solver.solve()`.
 
-#### **4\. Principios y diseños aplicados**
+#### **4\. Principles and designs applied**
 
-* **Inversión de Dependencias (DIP):** los `Main` y la fábrica dependen de la abstracción `CircuitSolver`, no de las clases concretas; el arranque depende de la interfaz `CircuitLoader`, no de cómo se leen los datos.
-* **Abierto/Cerrado (OCP):** añadir una "Parte C" es crear otro `CircuitSolver` e inyectarlo por la fábrica; el motor (`CircuitConnector`) y la carga quedan inalterados.
-* **Patrón Builder + Factory:** `SolverFactory` configura paso a paso y oculta qué implementación concreta se instancia.
-* **Responsabilidad Única (SRP):** `Box` guarda la geometría, `Circuit` la agrupación y su parseo, `CircuitConnector` solo el algoritmo, cada *Solver* solo su variante, `ResourceLineLoader` (compartido) solo lee I/O, `SolverFactory` solo ensambla.
-* **Segregación de Interfaces (ISP):** el puerto compartido `LineLoader` expone un único método cohesivo (`loadLines`).
-* **Inmutabilidad y seguridad en paralelo:** al ser `Box`, `BoxPair` y `Circuit` records inmutables, el procesamiento paralelo de pares (`parallel()`) queda libre de condiciones de carrera.
-* **Inyección de Dependencias (DI) / Strategy:** los circuitos y el tipo se pasan desde fuera; el comportamiento se elige sin tocar el núcleo.
-* **Alta Cohesión y DRY:** la geometría está en `Box`, el parseo en `Circuit`, y la lectura de entrada centralizada en una sola implementación.
+* **Dependency Inversion (DIP):** the `Main`s and the factory depend on the `CircuitSolver` abstraction, not on the concrete classes; startup depends on the `LineLoader` interface, not on how the data is read.
+* **Open/Closed (OCP):** adding a "Part C" means creating another `CircuitSolver` and injecting it through the factory; the engine (`CircuitConnector`) and the loading stay unchanged.
+* **Builder + Factory pattern:** `SolverFactory` configures step by step and hides which concrete implementation is instantiated.
+* **Single Responsibility (SRP):** `Box` holds the geometry, `Circuit` the grouping and its parsing, `CircuitConnector` only the algorithm, each *Solver* only its variant, `ResourceLineLoader` (shared) only reads I/O, `SolverFactory` only assembles.
+* **Interface Segregation (ISP):** the shared port `LineLoader` exposes a single cohesive method (`loadLines`).
+* **Immutability and parallel safety:** since `Box`, `BoxPair` and `Circuit` are immutable records, the parallel processing of pairs (`parallel()`) is free of race conditions.
+* **Dependency Injection (DI) / Strategy:** the circuits and the type are passed from outside; the behavior is chosen without touching the core.
+* **High Cohesion and DRY:** the geometry is in `Box`, the parsing in `Circuit`, and input reading centralized in a single implementation.

@@ -1,71 +1,71 @@
-### **Día 9 \- Cine**
+### **Day 9 \- Cinema**
 
-#### **1\. Introducción y Problema**
+#### **1\. Introduction and Problem**
 
-El problema nos sitúa en el cine de la base del Polo Norte, con un suelo de baldosas rojas y de otros colores. La entrada es una lista de coordenadas de las baldosas rojas. El objetivo es encontrar el **rectángulo más grande** posible usando dos baldosas rojas como esquinas opuestas. El reto tiene dos partes que comparten toda la mecánica (generar rectángulos, ordenarlos por área) y solo cambian la **restricción geométrica**:
+The problem places us in the cinema of the North Pole base, with a floor of red tiles and tiles of other colors. The input is a list of coordinates of the red tiles. The goal is to find the **largest possible rectangle** using two red tiles as opposite corners. The challenge has two parts that share all the mechanics (generating rectangles, sorting them by area) and only change the **geometric constraint**:
 
-* **Parte A:** calcular el área máxima formando un rectángulo con **cualquier par** de baldosas rojas, sin importar qué hay en medio.
-* **Parte B:** las baldosas rojas forman el contorno de un **polígono**. El rectángulo debe ser **válido**: estar contenido completamente dentro del polígono (no cruzar ninguna arista y tener su centro dentro). Requiere comprobaciones de intersección y de contención (*ray casting*).
+* **Part A:** compute the maximum area by forming a rectangle with **any pair** of red tiles, regardless of what is in between.
+* **Part B:** the red tiles form the outline of a **polygon**. The rectangle must be **valid**: fully contained inside the polygon (not crossing any edge and having its center inside). It requires intersection and containment checks (*ray casting*).
 
-Como lo único que cambia es el criterio que decide qué rectángulo vale, ambas partes se modelan como una abstracción (`AreaSolver`) con dos implementaciones intercambiables, seleccionadas por una fábrica.
+Since the only thing that changes is the criterion that decides which rectangle counts, both parts are modeled as an abstraction (`AreaSolver`) with two interchangeable implementations, selected by a factory.
 
-#### **2\. Arquitectura por capas**
+#### **2\. Layered architecture**
 
-He reorganizado el día en las mismas **tres capas** (más la frontera `common.io` compartida) que los días anteriores, con las dependencias apuntando siempre hacia el dominio:
+I reorganized the day into the same **three layers** (plus the shared `common.io` boundary) as the previous days, with dependencies always pointing towards the domain:
 
 ```
 software.ulpgc.aoc
-├── common.io     (entrada compartida por TODOS los días)
-│   ├── LineLoader          (puerto: List<String> loadLines())
-│   └── ResourceLineLoader  (adaptador: lee el recurso del classpath)
+├── common.io     (input shared by ALL days)
+│   ├── LineLoader          (port: List<String> loadLines())
+│   └── ResourceLineLoader  (adapter: reads the classpath resource)
 └── day09
-    ├── model         (dominio puro, no depende de nadie)
+    ├── model         (pure domain, depends on nothing)
     │   ├── Coordinate
     │   ├── Rectangle
     │   └── AreaSolver
-    ├── control       (orquesta el caso de uso)
+    ├── control       (orchestrates the use case)
     │   ├── RectangleFinder
     │   ├── MaxAreaSolver
     │   ├── AllowedAreaSolver
     │   └── AreaSolverFactory
-    └── application   (detalles y arranque)
-        ├── InputLoader   (parsea las líneas al dominio)
+    └── application   (details and startup)
+        ├── InputLoader   (parses the lines into the domain)
         └── a/Main09A, b/Main09B
 ```
 
-**Dirección de dependencias:** `application → control → model` y `application → common.io`. El dominio (`model`) no importa ninguna otra capa; el loader compartido (`common.io`) tampoco depende de nadie.
+**Dependency direction:** `application → control → model` and `application → common.io`. The domain (`model`) imports no other layer; the shared loader (`common.io`) depends on nothing either.
 
-#### **3\. Explicación clase a clase**
+#### **3\. Class-by-class explanation**
 
-**Capa `model` (dominio puro)**
+**`model` layer (pure domain)**
 
-* **`Coordinate`** *(record)*: un *Value Object* inmutable con las coordenadas (x, y). Encapsula su parseo desde texto (`from("7,1")`), centralizando la transformación de datos.
-* **`Rectangle`** *(record)*: un *Value Object* rico que no solo guarda dos esquinas, sino que **encapsula toda la geometría**: ancho, alto, área, si es vertical y sus límites (`minX`, `maxX`, `minY`, `maxY`). Así los cálculos geométricos no se dispersan por el resto del programa → **alta cohesión**.
-* **`AreaSolver`** *(interfaz funcional)*: la **abstracción** del caso de uso (`long solve()`). Vive en el dominio porque no depende de ninguna otra capa; es la pieza que permite el DIP y el polimorfismo entre la Parte A y la B.
+* **`Coordinate`** *(record)*: an immutable *Value Object* with the (x, y) coordinates. It encapsulates its parsing from text (`from("7,1")`), centralizing the data transformation.
+* **`Rectangle`** *(record)*: a rich *Value Object* that not only holds two corners, but **encapsulates all the geometry**: width, height, area, whether it is vertical and its bounds (`minX`, `maxX`, `minY`, `maxY`). This way the geometric computations are not scattered across the rest of the program → **high cohesion**.
+* **`AreaSolver`** *(functional interface)*: the **abstraction** of the use case (`long solve()`). It lives in the domain because it depends on no other layer; it is the piece that enables DIP and polymorphism between Part A and B.
 
-**Frontera de entrada (compartida: `common.io`)**
+**Input boundary (shared: `common.io`)**
 
-* **`LineLoader`** *(interfaz, puerto)* y **`ResourceLineLoader`** *(adaptador)*: viven en el paquete común `software.ulpgc.aoc.common.io` y los reutilizan **todos los días**. `loadLines()` devuelve las líneas crudas del recurso (`List<String>`); el parseo al dominio ocurre después, en la capa `application` (InputLoader parsea con Coordinate.from). Así se centraliza la lectura (una sola implementación, sin duplicar) y se separa de la interpretación (SRP).
+* **`LineLoader`** *(interface, port)* and **`ResourceLineLoader`** *(adapter)*: they live in the shared package `software.ulpgc.aoc.common.io` and are reused by **every day**. `loadLines()` returns the raw lines of the resource (`List<String>`); parsing into the domain happens afterwards, in the `application` layer (InputLoader parses with Coordinate.from). This centralizes reading (a single implementation, no duplication) and separates it from interpretation (SRP).
 
-**Capa `control` (orquesta el caso de uso)**
+**`control` layer (orchestrates the use case)**
 
-* **`RectangleFinder`** *(motor algorítmico)*: contiene la búsqueda combinatoria. Genera todos los rectángulos posibles ordenados por área (`generateRectangles`), encuentra el mayor (`findLargest`, Parte A) y el mayor válido dentro del polígono (`findLargestAllowed`, Parte B), con sus auxiliares de geometría (aristas del polígono, intersección y contención por *ray casting*).
-* **`MaxAreaSolver`** *(implements `AreaSolver`)*: la estrategia de la Parte A; delega en el buscador y devuelve el área del rectángulo mayor.
-* **`AllowedAreaSolver`** *(implements `AreaSolver`)*: la estrategia de la Parte B; devuelve el área del mayor rectángulo permitido.
-* **`AreaSolverFactory`** *(Builder + Factory)*: configura paso a paso (`from(tiles).type(A|B).build()`) y crea la implementación concreta correcta de forma transparente, validando que no falte nada.
+* **`RectangleFinder`** *(algorithmic engine)*: contains the combinatorial search. It generates all possible rectangles sorted by area (`generateRectangles`), finds the largest (`findLargest`, Part A) and the largest valid one inside the polygon (`findLargestAllowed`, Part B), with its geometry helpers (polygon edges, intersection and containment via *ray casting*).
+* **`MaxAreaSolver`** *(implements `AreaSolver`)*: the Part A strategy; delegates to the finder and returns the area of the largest rectangle.
+* **`AllowedAreaSolver`** *(implements `AreaSolver`)*: the Part B strategy; returns the area of the largest allowed rectangle.
+* **`AreaSolverFactory`** *(Builder + Factory)*: configures step by step (`from(tiles).type(A|B).build()`) and creates the correct concrete implementation transparently, validating that nothing is missing.
 
-**Capa `application` (detalles y arranque)**
+**`application` layer (details and startup)**
 
-* **`InputLoader`** *(fachada de ensamblaje)*: lee las líneas, las parsea a coordenadas (`Coordinate::from`) y configura el `AreaSolver` correcto vía la fábrica (`loadMaxArea`, `loadAllowedArea`).
-* **`Main09A` / `Main09B`** *(composition root)*: el único punto donde se elige la estrategia. El resto del flujo es idéntico: `solver.solve()`.
+* **`InputLoader`** *(assembly facade)*: reads the lines, parses them into coordinates (`Coordinate::from`) and configures the correct `AreaSolver` via the factory (`loadMaxArea`, `loadAllowedArea`).
+* **`Main09A` / `Main09B`** *(composition root)*: the single point where the strategy is chosen. The rest of the flow is identical: `solver.solve()`.
 
-#### **4\. Principios y diseños aplicados**
+#### **4\. Principles and designs applied**
 
-* **Inversión de Dependencias (DIP):** los `Main` y la fábrica dependen de la abstracción `AreaSolver`, no de las clases concretas; el arranque depende de la interfaz `TileLoader`, no de cómo se leen los datos.
-* **Abierto/Cerrado (OCP):** añadir otra restricción (ej. rectángulos de un tamaño máximo) es crear otro `AreaSolver` e inyectarlo por la fábrica; el motor `RectangleFinder` queda inalterado.
-* **Patrón Builder + Factory:** `AreaSolverFactory` configura paso a paso y oculta qué implementación concreta se instancia.
-* **Responsabilidad Única (SRP):** `Rectangle` guarda la geometría, `RectangleFinder` solo la búsqueda, cada *Solver* solo su variante, `ResourceLineLoader` (compartido) solo lee I/O, `AreaSolverFactory` solo ensambla.
-* **Segregación de Interfaces (ISP):** el puerto compartido `LineLoader` expone un único método cohesivo (`loadLines`).
-* **Patrón Factory Method:** `Coordinate.from(...)` convierte texto crudo en un objeto del dominio ya válido.
-* **Inmutabilidad:** `Coordinate` y `Rectangle` son records inmutables, lo que da seguridad durante la generación masiva de combinaciones en streams.
-* **Inyección de Dependencias (DI) / Strategy:** las baldosas y el tipo se pasan desde fuera; el comportamiento se elige sin tocar el núcleo.
+* **Dependency Inversion (DIP):** the `Main`s and the factory depend on the `AreaSolver` abstraction, not on the concrete classes; startup depends on the `LineLoader` interface, not on how the data is read.
+* **Open/Closed (OCP):** adding another constraint (e.g. rectangles of a maximum size) means creating another `AreaSolver` and injecting it through the factory; the `RectangleFinder` engine stays unchanged.
+* **Builder + Factory pattern:** `AreaSolverFactory` configures step by step and hides which concrete implementation is instantiated.
+* **Single Responsibility (SRP):** `Rectangle` holds the geometry, `RectangleFinder` only the search, each *Solver* only its variant, `ResourceLineLoader` (shared) only reads I/O, `AreaSolverFactory` only assembles.
+* **Interface Segregation (ISP):** the shared port `LineLoader` exposes a single cohesive method (`loadLines`).
+* **Factory Method pattern:** `Coordinate.from(...)` turns raw text into an already-valid domain object.
+* **Immutability:** `Coordinate` and `Rectangle` are immutable records, which provides safety during the massive generation of combinations in streams.
+* **Dependency Injection (DI) / Strategy:** the tiles and the type are passed from outside; the behavior is chosen without touching the core.

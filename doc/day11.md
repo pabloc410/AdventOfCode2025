@@ -1,69 +1,69 @@
-### **Día 11 \- Reactor**
+### **Day 11 \- Reactor**
 
-#### **1\. Introducción y Problema**
+#### **1\. Introduction and Problem**
 
-El escenario nos sitúa en una fábrica donde un gran reactor toroidal tiene problemas de conexión con un rack de servidores. La entrada es una lista de dispositivos y sus conexiones unidireccionales: un **grafo dirigido**. El reto consiste en contar rutas a través de esa red, y comparte toda la mecánica (parsear el grafo, recorrer con DFS + memoización) cambiando solo *qué consulta* se hace:
+The setting is a factory where a large toroidal reactor has connection problems with a server rack. The input is a list of devices and their one-way connections: a **directed graph**. The challenge is to count routes through that network, and it shares all the mechanics (parsing the graph, traversing with DFS + memoization) changing only *which query* is made:
 
-* **Parte A:** calcular el número total de rutas distintas desde el inicio (`you`) hasta la salida (`out`).
-* **Parte B:** contar las rutas desde el servidor (`svr`) hasta la salida (`out`) que pasen obligatoriamente por dos nodos intermedios (`dac` y `fft`), en **cualquier orden**. Se descompone en segmentos y se multiplican sus conteos.
+* **Part A:** compute the total number of distinct routes from the start (`you`) to the exit (`out`).
+* **Part B:** count the routes from the server (`svr`) to the exit (`out`) that must pass through two intermediate nodes (`dac` and `fft`), in **any order**. It is decomposed into segments and their counts are multiplied.
 
-Como lo único que cambia es la consulta sobre el mismo grafo, ambas partes se modelan como una abstracción (`RouteSolver`) con dos implementaciones intercambiables, seleccionadas por una fábrica.
+Since the only thing that changes is the query over the same graph, both parts are modeled as an abstraction (`RouteSolver`) with two interchangeable implementations, selected by a factory.
 
-#### **2\. Arquitectura por capas**
+#### **2\. Layered architecture**
 
-He reorganizado el día en las mismas **tres capas** (más la frontera `common.io` compartida) que los días anteriores, con las dependencias apuntando siempre hacia el dominio:
+I reorganized the day into the same **three layers** (plus the shared `common.io` boundary) as the previous days, with dependencies always pointing towards the domain:
 
 ```
 software.ulpgc.aoc
-├── common.io     (entrada compartida por TODOS los días)
-│   ├── LineLoader          (puerto: List<String> loadLines())
-│   └── ResourceLineLoader  (adaptador: lee el recurso del classpath)
+├── common.io     (input shared by ALL days)
+│   ├── LineLoader          (port: List<String> loadLines())
+│   └── ResourceLineLoader  (adapter: reads the classpath resource)
 └── day11
-    ├── model         (dominio puro, no depende de nadie)
+    ├── model         (pure domain, depends on nothing)
     │   ├── RouteGraph
     │   └── RouteSolver
-    ├── control       (orquesta el caso de uso)
+    ├── control       (orchestrates the use case)
     │   ├── RouteAnalyzer
     │   ├── TotalRoutesSolver
     │   ├── CriticalRoutesSolver
     │   └── RouteSolverFactory
-    └── application   (detalles y arranque)
-        ├── InputLoader   (parsea las líneas al dominio)
+    └── application   (details and startup)
+        ├── InputLoader   (parses the lines into the domain)
         └── a/Main11A, b/Main11B
 ```
 
-**Dirección de dependencias:** `application → control → model` y `application → common.io`. El dominio (`model`) no importa ninguna otra capa; el loader compartido (`common.io`) tampoco depende de nadie.
+**Dependency direction:** `application → control → model` and `application → common.io`. The domain (`model`) imports no other layer; the shared loader (`common.io`) depends on nothing either.
 
-#### **3\. Explicación clase a clase**
+#### **3\. Class-by-class explanation**
 
-**Capa `model` (dominio puro)**
+**`model` layer (pure domain)**
 
-* **`RouteGraph`** *(record)*: un *Value Object* que encapsula el grafo (`Map<String, List<String>>`). Ofrece una operación de alto nivel (`neighborsOf`) en vez de exponer el mapa crudo, y centraliza su construcción desde texto (`from(List<String>)`) → **alta cohesión** y **Tell-Don't-Ask**.
-* **`RouteSolver`** *(interfaz funcional)*: la **abstracción** del caso de uso (`long solve()`). Vive en el dominio porque no depende de ninguna otra capa; es la pieza que permite el DIP y el polimorfismo entre la Parte A y la B.
+* **`RouteGraph`** *(record)*: a *Value Object* that encapsulates the graph (`Map<String, List<String>>`). It offers a high-level operation (`neighborsOf`) instead of exposing the raw map, and centralizes its construction from text (`from(List<String>)`) → **high cohesion** and **Tell-Don't-Ask**.
+* **`RouteSolver`** *(functional interface)*: the **abstraction** of the use case (`long solve()`). It lives in the domain because it depends on no other layer; it is the piece that enables DIP and polymorphism between Part A and B.
 
-**Frontera de entrada (compartida: `common.io`)**
+**Input boundary (shared: `common.io`)**
 
-* **`LineLoader`** *(interfaz, puerto)* y **`ResourceLineLoader`** *(adaptador)*: viven en el paquete común `software.ulpgc.aoc.common.io` y los reutilizan **todos los días**. `loadLines()` devuelve las líneas crudas del recurso (`List<String>`); el parseo al dominio ocurre después, en la capa `application` (InputLoader parsea con RouteGraph.from). Así se centraliza la lectura (una sola implementación, sin duplicar) y se separa de la interpretación (SRP).
+* **`LineLoader`** *(interface, port)* and **`ResourceLineLoader`** *(adapter)*: they live in the shared package `software.ulpgc.aoc.common.io` and are reused by **every day**. `loadLines()` returns the raw lines of the resource (`List<String>`); parsing into the domain happens afterwards, in the `application` layer (InputLoader parses with RouteGraph.from). This centralizes reading (a single implementation, no duplication) and separates it from interpretation (SRP).
 
-**Capa `control` (orquesta el caso de uso)**
+**`control` layer (orchestrates the use case)**
 
-* **`RouteAnalyzer`** *(motor algorítmico)*: concentra la algoritmia de grafos. `countRoutes` recorre con **DFS y memoización** (un `Map` de resultados parciales) para no recomputar; `countRoutesWithIntermediates` descompone la Parte B en segmentos y multiplica sus conteos. No gestiona I/O ni estado global.
-* **`TotalRoutesSolver`** *(implements `RouteSolver`)*: la estrategia de la Parte A; consulta `you → out`.
-* **`CriticalRoutesSolver`** *(implements `RouteSolver`)*: la estrategia de la Parte B; consulta `svr → out` pasando por `dac` y `fft`.
-* **`RouteSolverFactory`** *(Builder + Factory)*: configura paso a paso (`from(graph).type(A|B).build()`) y crea la implementación concreta correcta de forma transparente.
+* **`RouteAnalyzer`** *(algorithmic engine)*: concentrates the graph algorithmics. `countRoutes` traverses with **DFS and memoization** (a `Map` of partial results) to avoid recomputing; `countRoutesWithIntermediates` decomposes Part B into segments and multiplies their counts. It handles no I/O or global state.
+* **`TotalRoutesSolver`** *(implements `RouteSolver`)*: the Part A strategy; queries `you → out`.
+* **`CriticalRoutesSolver`** *(implements `RouteSolver`)*: the Part B strategy; queries `svr → out` passing through `dac` and `fft`.
+* **`RouteSolverFactory`** *(Builder + Factory)*: configures step by step (`from(graph).type(A|B).build()`) and creates the correct concrete implementation transparently.
 
-**Capa `application` (detalles y arranque)**
+**`application` layer (details and startup)**
 
-* **`InputLoader`** *(fachada de ensamblaje)*: lee las líneas, construye el `RouteGraph` (`RouteGraph.from`) y configura el `RouteSolver` correcto vía la fábrica (`loadTotalRoutes`, `loadCriticalRoutes`).
-* **`Main11A` / `Main11B`** *(composition root)*: el único punto donde se elige la estrategia. El resto del flujo es idéntico: `solver.solve()`.
+* **`InputLoader`** *(assembly facade)*: reads the lines, builds the `RouteGraph` (`RouteGraph.from`) and configures the correct `RouteSolver` via the factory (`loadTotalRoutes`, `loadCriticalRoutes`).
+* **`Main11A` / `Main11B`** *(composition root)*: the single point where the strategy is chosen. The rest of the flow is identical: `solver.solve()`.
 
-#### **4\. Principios y diseños aplicados**
+#### **4\. Principles and designs applied**
 
-* **Inversión de Dependencias (DIP):** los `Main` y la fábrica dependen de la abstracción `RouteSolver`, no de las clases concretas; el arranque depende de la interfaz `GraphLoader`.
-* **Abierto/Cerrado (OCP):** añadir otra consulta (ej. rutas que eviten un nodo) es crear otro `RouteSolver` e inyectarlo; el motor `RouteAnalyzer` queda inalterado.
-* **Patrón Builder + Factory:** `RouteSolverFactory` configura paso a paso y oculta qué implementación concreta se instancia.
-* **Responsabilidad Única (SRP):** `RouteGraph` guarda el grafo, `RouteAnalyzer` solo la algoritmia, cada *Solver* solo su consulta, `ResourceLineLoader` (compartido) solo lee I/O, la fábrica solo ensambla.
-* **Segregación de Interfaces (ISP):** el puerto compartido `LineLoader` expone un único método cohesivo (`loadLines`).
-* **DRY:** la Parte B reutiliza `countRoutes` descomponiendo en segmentos en vez de duplicar el DFS; la lectura está centralizada en una implementación.
-* **Patrón Factory Method:** `RouteGraph.from(...)` convierte texto crudo en el grafo del dominio ya válido.
-* **Memoización / rendimiento:** guardar resultados parciales en un `Map` evita recomputar subcaminos, clave en un problema combinatorio.
+* **Dependency Inversion (DIP):** the `Main`s and the factory depend on the `RouteSolver` abstraction, not on the concrete classes; startup depends on the `LineLoader` interface.
+* **Open/Closed (OCP):** adding another query (e.g. routes that avoid a node) means creating another `RouteSolver` and injecting it; the `RouteAnalyzer` engine stays unchanged.
+* **Builder + Factory pattern:** `RouteSolverFactory` configures step by step and hides which concrete implementation is instantiated.
+* **Single Responsibility (SRP):** `RouteGraph` holds the graph, `RouteAnalyzer` only the algorithmics, each *Solver* only its query, `ResourceLineLoader` (shared) only reads I/O, the factory only assembles.
+* **Interface Segregation (ISP):** the shared port `LineLoader` exposes a single cohesive method (`loadLines`).
+* **DRY:** Part B reuses `countRoutes` by decomposing into segments instead of duplicating the DFS; reading is centralized in one implementation.
+* **Factory Method pattern:** `RouteGraph.from(...)` turns raw text into the already-valid domain graph.
+* **Memoization / performance:** storing partial results in a `Map` avoids recomputing sub-paths, key in a combinatorial problem.

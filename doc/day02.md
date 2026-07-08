@@ -1,64 +1,64 @@
-### **Día 2 \- Tienda de Regalos**
+### **Day 2 \- Gift Shop**
 
-#### **1\. Introducción y Problema**
+#### **1\. Introduction and Problem**
 
-El problema nos sitúa en una tienda de regalos con una base de datos corrupta. Tenemos rangos de IDs de productos (ej. "10-20") y debemos encontrar cuáles son inválidos y sumarlos. El reto tiene dos partes que cambian la definición de "inválido":
+The problem places us in a gift shop with a corrupted database. We have ranges of product IDs (e.g. "10-20") and must find which ones are invalid and sum them. The challenge has two parts that change the definition of "invalid":
 
-* **Parte A:** Un ID es inválido si está formado por una secuencia repetida **exactamente dos veces** (ej: 1212, o 11).
-* **Parte B:** Un ID es inválido si la secuencia se repite **dos o más veces** (ej: 121212 y 111 también cuentan, además de los de la Parte A).
+* **Part A:** An ID is invalid if it is made of a sequence repeated **exactly twice** (e.g. 1212, or 11).
+* **Part B:** An ID is invalid if the sequence repeats **two or more times** (e.g. 121212 and 111 also count, in addition to those of Part A).
 
-Las dos partes comparten todo: leer los rangos, expandirlos a IDs y sumar los inválidos. Lo único que cambia es la regla que decide si un ID es inválido. Por eso esa regla se modela como una estrategia intercambiable.
+Both parts share everything: reading the ranges, expanding them into IDs and summing the invalid ones. The only thing that changes is the rule that decides whether an ID is invalid. That is why that rule is modeled as an interchangeable strategy.
 
-#### **2\. Arquitectura por capas**
+#### **2\. Layered architecture**
 
-He reorganizado el día en las mismas **tres capas** (más la frontera `common.io` compartida) que el día 1, con las dependencias apuntando siempre hacia el dominio:
+I reorganized the day into the same **three layers** (plus the shared `common.io` boundary) as day 1, with dependencies always pointing towards the domain:
 
 ```
 software.ulpgc.aoc
-├── common.io     (entrada compartida por TODOS los días)
-│   ├── LineLoader          (puerto: List<String> loadLines())
-│   └── ResourceLineLoader  (adaptador: lee el recurso del classpath)
+├── common.io     (input shared by ALL days)
+│   ├── LineLoader          (port: List<String> loadLines())
+│   └── ResourceLineLoader  (adapter: reads the classpath resource)
 └── day02
-    ├── model         (dominio puro, no depende de nadie)
+    ├── model         (pure domain, depends on nothing)
     │   └── IdRange
-    ├── control       (orquesta el caso de uso)
+    ├── control       (orchestrates the use case)
     │   ├── Engine
     │   ├── EngineBuilder
     │   └── ValidationStrategies
-    └── application   (detalles y arranque)
-        ├── InputLoader   (parsea las líneas al dominio)
+    └── application   (details and startup)
+        ├── InputLoader   (parses the lines into the domain)
         └── a/Main02a, b/Main02b
 ```
 
-**Dirección de dependencias:** `application → control → model` y `application → common.io`. El dominio (`model`) no importa ninguna otra capa; el loader compartido (`common.io`) tampoco depende de nadie.
+**Dependency direction:** `application → control → model` and `application → common.io`. The domain (`model`) imports no other layer; the shared loader (`common.io`) depends on nothing either.
 
-#### **3\. Explicación clase a clase**
+#### **3\. Class-by-class explanation**
 
-**Capa `model` (dominio puro)**
+**`model` layer (pure domain)**
 
-* **`IdRange`** *(record)*: representa un rango de IDs (p.ej. "10-20"). Tiene un constructor "traductor" que recibe el `String` sucio del fichero y lo convierte en dos `long`. Sabe expandirse a un flujo de números (`getIds()`) y filtrar los inválidos según una regla (`getInvalidIds(validator)`). No conoce ficheros, ni el motor, ni qué regla decide la validez → **alta cohesión**.
+* **`IdRange`** *(record)*: represents a range of IDs (e.g. "10-20"). It has a "translator" constructor that receives the dirty `String` from the file and converts it into two `long`s. It knows how to expand into a stream of numbers (`getIds()`) and filter the invalid ones according to a rule (`getInvalidIds(validator)`). It knows nothing about files, the engine, or which rule decides validity → **high cohesion**.
 
-**Frontera de entrada (compartida: `common.io`)**
+**Input boundary (shared: `common.io`)**
 
-* **`LineLoader`** *(interfaz, puerto)* y **`ResourceLineLoader`** *(adaptador)*: viven en el paquete común `software.ulpgc.aoc.common.io` y los reutilizan **todos los días**. `loadLines()` devuelve las líneas crudas del recurso (`List<String>`); el parseo al dominio ocurre después, en la capa `application` (Main02a/b parsean con InputLoader). Así se centraliza la lectura (una sola implementación, sin duplicar) y se separa de la interpretación (SRP).
+* **`LineLoader`** *(interface, port)* and **`ResourceLineLoader`** *(adapter)*: they live in the shared package `software.ulpgc.aoc.common.io` and are reused by **every day**. `loadLines()` returns the raw lines of the resource (`List<String>`); parsing into the domain happens afterwards, in the `application` layer (Main02a/b parse via InputLoader). This centralizes reading (a single implementation, no duplication) and separates it from interpretation (SRP).
 
-**Capa `control` (orquesta el caso de uso)**
+**`control` layer (orchestrates the use case)**
 
-* **`Engine`** *(record)*: el caso de uso. Recibe los rangos ya cargados y la estrategia de validación (`LongPredicate`), y en `run()` recorre cada rango, queda con los IDs inválidos y los suma. No sabe de dónde vienen los rangos ni cómo se valida cada ID.
-* **`EngineBuilder`** *(Patrón Builder, interfaz fluida)*: construye el `Engine` paso a paso (`from(...).use(...).runner()`) y garantiza que nunca se cree incompleto (si falta la fuente o la estrategia, lanza excepción). Ya **no lee ficheros**: recibe los rangos ya cargados, así la construcción queda aislada del I/O.
-* **`ValidationStrategies`** *(clase de utilidad)*: agrupa las dos reglas de negocio (`PATTERN_A`, `PATTERN_B`) como constantes `LongPredicate` basadas en expresiones regulares. Su única razón para cambiar es que cambie la definición de ID "inválido".
+* **`Engine`** *(record)*: the use case. It receives the already-loaded ranges and the validation strategy (`LongPredicate`), and in `run()` it goes through each range, keeps the invalid IDs and sums them. It does not know where the ranges come from or how each ID is validated.
+* **`EngineBuilder`** *(Builder pattern, fluent interface)*: builds the `Engine` step by step (`from(...).use(...).runner()`) and guarantees it is never created incomplete (if the source or the strategy is missing, it throws). It **no longer reads files**: it receives the already-loaded ranges, so construction is isolated from I/O.
+* **`ValidationStrategies`** *(utility class)*: groups the two business rules (`PATTERN_A`, `PATTERN_B`) as `LongPredicate` constants based on regular expressions. Its only reason to change is a change in the definition of an "invalid" ID.
 
-**Capa `application` (detalles y arranque)**
+**`application` layer (details and startup)**
 
-* **`InputLoader`** *(fachada de ensamblaje, en `application`)*: usa el `ResourceLineLoader` compartido para leer las líneas y las parsea al dominio antes de construir el caso de uso.
-* **`Main02a` / `Main02b`** *(composition root)*: el único punto donde se eligen el cargador y la estrategia y se conectan con el Builder. La Parte A y la Parte B se diferencian solo en la estrategia inyectada.
+* **`InputLoader`** *(assembly facade, in `application`)*: uses the shared `ResourceLineLoader` to read the lines and parses them into the domain before building the use case.
+* **`Main02a` / `Main02b`** *(composition root)*: the single point where the loader and the strategy are chosen and wired with the Builder. Part A and Part B differ only in the injected strategy.
 
-#### **4\. Principios y diseños aplicados**
+#### **4\. Principles and designs applied**
 
-* **Inversión de Dependencias (DIP):** el `Engine` depende de la abstracción `LongPredicate` (recibe un `long` y dice si es válido), no de una regla concreta; el arranque depende de la interfaz `RangeLoader`, no de cómo se leen los datos.
-* **Abierto/Cerrado (OCP):** cambiar de la Parte A a la B (o añadir una regla nueva) es inyectar otra estrategia; el `Engine` queda cerrado a modificación.
-* **Responsabilidad Única (SRP):** `IdRange` solo entiende de rangos, `Engine` solo procesa, `ValidationStrategies` solo guarda las reglas, `ResourceLineLoader` (compartido) solo lee I/O, `EngineBuilder` solo ensambla.
-* **Patrón Builder + interfaz fluida:** `EngineBuilder` arma el `Engine` paso a paso y valida que esté completo antes de crearlo.
-* **Segregación de Interfaces (ISP):** el puerto compartido `LineLoader` expone un único método cohesivo (`loadLines`).
-* **Inyección de Dependencias (DI) / Strategy:** el cargador y la estrategia se pasan desde fuera; el comportamiento se elige sin tocar el núcleo.
-* **Bajo Acoplamiento y DRY:** el procesamiento es independiente de las reglas de validación, y la lectura de entrada está centralizada en una sola implementación reutilizable.
+* **Dependency Inversion (DIP):** the `Engine` depends on the `LongPredicate` abstraction (receives a `long` and says whether it is valid), not on a concrete rule; startup depends on the `LineLoader` interface, not on how the data is read.
+* **Open/Closed (OCP):** switching from Part A to B (or adding a new rule) means injecting another strategy; the `Engine` stays closed to modification.
+* **Single Responsibility (SRP):** `IdRange` only understands ranges, `Engine` only processes, `ValidationStrategies` only holds the rules, `ResourceLineLoader` (shared) only reads I/O, `EngineBuilder` only assembles.
+* **Builder pattern + fluent interface:** `EngineBuilder` builds the `Engine` step by step and validates that it is complete before creating it.
+* **Interface Segregation (ISP):** the shared port `LineLoader` exposes a single cohesive method (`loadLines`).
+* **Dependency Injection (DI) / Strategy:** the loader and the strategy are passed from outside; the behavior is chosen without touching the core.
+* **Low Coupling and DRY:** the processing is independent of the validation rules, and input reading is centralized in a single reusable implementation.

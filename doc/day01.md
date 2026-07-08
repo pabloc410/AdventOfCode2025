@@ -1,67 +1,67 @@
-### **Día 1 \- Entrada Secreta**
+### **Day 1 \- Secret Entrance**
 
-#### **1\. Introducción y Problema**
+#### **1\. Introduction and Problem**
 
-El problema plantea simular una caja fuerte con un dial circular (0-99). Se empieza en 50; si vas a la izquierda (L10) restas, y si vas a la derecha (R10) sumas. El reto tiene dos partes que cambian la regla de cómo se obtiene la contraseña:
+The problem is to simulate a safe with a circular dial (0-99). It starts at 50; turning left (L10) subtracts, and turning right (R10) adds. The challenge has two parts that change the rule for how the password is obtained:
 
-* **Parte A:** La contraseña depende de **dónde termina** el dial tras cada rotación: suma 1 cada vez que un giro acaba exactamente en 0.
-* **Parte B:** La contraseña cuenta **cuántas veces el dial pasa por el cero** durante el giro (no solo dónde acaba, sino cada cruce intermedio).
+* **Part A:** The password depends on **where the dial ends up** after each rotation: add 1 every time a turn lands exactly on 0.
+* **Part B:** The password counts **how many times the dial passes through zero** during the turn (not only where it ends, but every intermediate crossing).
 
-Ambas partes leen la misma entrada y comparten toda la mecánica del dial; lo único que cambia es la regla de puntuación. Esa observación es la que guía el diseño: si lo único que varía es una regla, esa regla debe poder enchufarse desde fuera sin tocar el resto.
+Both parts read the same input and share all the dial mechanics; the only thing that changes is the scoring rule. That observation guides the design: if the only thing that varies is a rule, that rule must be pluggable from the outside without touching the rest.
 
-#### **2\. Arquitectura por capas**
+#### **2\. Layered architecture**
 
-He reorganizado el día en **tres capas** (más la frontera `common.io` compartida), de modo que las dependencias apuntan siempre hacia el dominio y nunca al revés:
+I reorganized the day into **three layers** (plus the shared `common.io` boundary), so that dependencies always point towards the domain and never the other way:
 
 ```
 software.ulpgc.aoc
-├── common.io     (entrada compartida por TODOS los días)
-│   ├── LineLoader          (puerto: List<String> loadLines())
-│   └── ResourceLineLoader  (adaptador: lee el recurso del classpath)
+├── common.io     (input shared by ALL days)
+│   ├── LineLoader          (port: List<String> loadLines())
+│   └── ResourceLineLoader  (adapter: reads the classpath resource)
 └── day01
-    ├── model         (dominio puro, no depende de nadie)
+    ├── model         (pure domain, depends on nothing)
     │   ├── Dial
     │   ├── Instruction
     │   └── SecurityProtocol
-    ├── control       (orquesta el caso de uso)
+    ├── control       (orchestrates the use case)
     │   ├── Safe
     │   └── SecurityProtocols
-    └── application   (detalles y arranque)
-        ├── InputLoader   (parsea las líneas al dominio)
+    └── application   (details and startup)
+        ├── InputLoader   (parses the lines into the domain)
         └── a/Main01a, b/Main01b
 ```
 
-**Dirección de dependencias:** `application → control → model` y `application → common.io`. El dominio (`model`) no importa ninguna otra capa; el loader compartido (`common.io`) tampoco depende de nadie.
+**Dependency direction:** `application → control → model` and `application → common.io`. The domain (`model`) imports no other layer; the shared loader (`common.io`) depends on nothing either.
 
-#### **3\. Explicación clase a clase**
+#### **3\. Class-by-class explanation**
 
-**Capa `model` (dominio puro)**
+**`model` layer (pure domain)**
 
-* **`Dial`** *(record inmutable)*: representa la rueda y su única tarea es la aritmética circular. Su constructor normaliza siempre la posición al rango 0-99, y `rotate(int)` devuelve un **nuevo** `Dial` en vez de mutar el actual. No sabe nada de ficheros ni de reglas de puntuación → **alta cohesión**.
-* **`Instruction`** *(record)*: representa una orden de giro ("L10", "R48"). Concentra el parseo y la validación en `of(String)`, que devuelve un `Optional` y descarta entradas inválidas (nulos, vacíos, basura). Expone `movement()` (L resta, R suma). Sacar esto de la caja fuerte es lo que le da a `Safe` una sola responsabilidad.
-* **`SecurityProtocol`** *(interfaz funcional)*: la **abstracción** de la regla de puntuación (`calculatePoints(oldDial, movement, newDial)`). Vive en el dominio porque solo habla el idioma del dominio (`Dial`) y no depende de ninguna otra capa. Es la pieza que permite el DIP.
+* **`Dial`** *(immutable record)*: represents the wheel and its only task is circular arithmetic. Its constructor always normalizes the position to the 0-99 range, and `rotate(int)` returns a **new** `Dial` instead of mutating the current one. It knows nothing about files or scoring rules → **high cohesion**.
+* **`Instruction`** *(record)*: represents a turn command ("L10", "R48"). It concentrates parsing and validation in `of(String)`, which returns an `Optional` and discards invalid input (nulls, empty, garbage). It exposes `movement()` (L subtracts, R adds). Pulling this out of the safe is what gives `Safe` a single responsibility.
+* **`SecurityProtocol`** *(functional interface)*: the **abstraction** of the scoring rule (`calculatePoints(oldDial, movement, newDial)`). It lives in the domain because it only speaks the domain's language (`Dial`) and depends on no other layer. It is the piece that enables DIP.
 
-**Frontera de entrada (compartida: `common.io`)**
+**Input boundary (shared: `common.io`)**
 
-* **`LineLoader`** *(interfaz, puerto)* y **`ResourceLineLoader`** *(adaptador)*: viven en el paquete común `software.ulpgc.aoc.common.io` y los reutilizan **todos los días**. `loadLines()` devuelve las líneas crudas del recurso (`List<String>`); el parseo al dominio ocurre después, en la capa `application` (Main01a/b parsean con InputLoader). Así se centraliza la lectura (una sola implementación, sin duplicar) y se separa de la interpretación (SRP).
+* **`LineLoader`** *(interface, port)* and **`ResourceLineLoader`** *(adapter)*: they live in the shared package `software.ulpgc.aoc.common.io` and are reused by **every day**. `loadLines()` returns the raw lines of the resource (`List<String>`); parsing into the domain happens afterwards, in the `application` layer (Main01a/b parse via InputLoader). This centralizes reading (a single implementation, no duplication) and separates it from interpretation (SRP).
 
-**Capa `control` (orquesta el caso de uso)**
+**`control` layer (orchestrates the use case)**
 
-* **`Safe`**: el corazón del caso de uso. Mantiene el estado (dial actual y contador) y, por cada instrucción, gira el dial y delega la puntuación en el `SecurityProtocol` inyectado. No lee ficheros ni parsea texto: recibe `Instruction` ya validadas. `rotate(String)` se conserva por comodidad/robustez y delega en `Instruction.of`.
-* **`SecurityProtocols`**: agrupa las dos estrategias concretas (`PART_A`, `PART_B`) como constantes reutilizables. Añadir una regla nueva es crear otra constante, sin tocar `Safe`.
+* **`Safe`**: the heart of the use case. It keeps the state (current dial and counter) and, for each instruction, turns the dial and delegates scoring to the injected `SecurityProtocol`. It does not read files or parse text: it receives already-validated `Instruction`s. `rotate(String)` is kept for convenience/robustness and delegates to `Instruction.of`.
+* **`SecurityProtocols`**: groups the two concrete strategies (`PART_A`, `PART_B`) as reusable constants. Adding a new rule means creating another constant, without touching `Safe`.
 
-**Capa `application` (detalles y arranque)**
+**`application` layer (details and startup)**
 
-* **`InputLoader`** *(fachada de ensamblaje, en `application`)*: usa el `ResourceLineLoader` compartido para leer las líneas y las parsea al dominio antes de construir el caso de uso.
-* **`Main01a` / `Main01b`** *(composition root)*: el único punto donde se eligen las piezas concretas (qué cargador y qué protocolo) y se conectan por inyección. La Parte A y la Parte B se diferencian solo en la estrategia inyectada.
+* **`InputLoader`** *(assembly facade, in `application`)*: uses the shared `ResourceLineLoader` to read the lines and parses them into the domain before building the use case.
+* **`Main01a` / `Main01b`** *(composition root)*: the single point where the concrete pieces are chosen (which loader and which protocol) and wired by injection. Part A and Part B differ only in the injected strategy.
 
-#### **4\. Principios y diseños aplicados**
+#### **4\. Principles and designs applied**
 
-* **Inversión de Dependencias (DIP):** `Safe` depende de la abstracción `SecurityProtocol`, no de la lógica concreta de A o B; el arranque depende de `InstructionLoader`, no de cómo se leen los datos.
-* **Abierto/Cerrado (OCP):** añadir una regla es inyectar otra estrategia; `Safe` queda cerrada a modificación y abierta a extensión por polimorfismo.
-* **Responsabilidad Única (SRP):** `Dial` solo hace aritmética, `Instruction` solo parsea/valida, `Safe` solo orquesta, `ResourceLineLoader` (compartido) solo lee I/O.
-* **Segregación de Interfaces (ISP):** el puerto compartido `LineLoader` expone un único método cohesivo (`loadLines`).
-* **Inyección de Dependencias (DI) / Patrón Strategy:** el protocolo y el cargador se pasan desde fuera; el comportamiento se elige sin tocar el núcleo.
-* **Bajo Acoplamiento y Alta Cohesión:** las capas se comunican por abstracciones y cada clase agrupa lo que está estrechamente relacionado.
-* **DRY:** la lectura de entrada está centralizada en una sola implementación reutilizable.
-* **Tell, Don't Ask / encapsulamiento:** se le ordena a `Safe` que aplique una instrucción (`apply`) en vez de preguntarle su estado para decidir fuera; el `Dial` es inmutable y normaliza en su propio constructor.
+* **Dependency Inversion (DIP):** `Safe` depends on the `SecurityProtocol` abstraction, not on the concrete logic of A or B; startup depends on `LineLoader`, not on how the data is read.
+* **Open/Closed (OCP):** adding a rule means injecting another strategy; `Safe` stays closed to modification and open to extension via polymorphism.
+* **Single Responsibility (SRP):** `Dial` only does arithmetic, `Instruction` only parses/validates, `Safe` only orchestrates, `ResourceLineLoader` (shared) only reads I/O.
+* **Interface Segregation (ISP):** the shared port `LineLoader` exposes a single cohesive method (`loadLines`).
+* **Dependency Injection (DI) / Strategy pattern:** the protocol and the loader are passed from outside; the behavior is chosen without touching the core.
+* **Low Coupling and High Cohesion:** the layers communicate through abstractions and each class groups what is closely related.
+* **DRY:** input reading is centralized in a single reusable implementation.
+* **Tell, Don't Ask / encapsulation:** `Safe` is told to apply an instruction (`apply`) instead of being asked for its state to decide outside; the `Dial` is immutable and normalizes in its own constructor.
